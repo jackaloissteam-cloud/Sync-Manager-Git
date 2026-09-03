@@ -1,8 +1,7 @@
-# =====================================================================
-#  GitHub SYNC (Pull + Push)
-#  Usage:
-#    interaktiv:  .\gh-sync.ps1
-#    per Ordner:  .\gh-sync.ps1 -Path "C:\Projekte\meinrepo"
+﻿# =====================================================================
+#  Sync Manager Git v2 - SYNC
+#  Reihenfolge: add -> commit -> pull --rebase -> push
+#  PAT niemals in .git/config
 # =====================================================================
 
 param(
@@ -10,89 +9,115 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "gh-common.ps1")
 
-$CFG_DIR    = Join-Path $env:USERPROFILE ".gh_tools"
-$TOKEN_FILE = Join-Path $CFG_DIR "token.dat"
-$CFG_FILE   = Join-Path $CFG_DIR "config.json"
-
-if (-not (Test-Path $TOKEN_FILE) -or -not (Test-Path $CFG_FILE)) {
-    Write-Host "FEHLER: Setup fehlt. Bitte zuerst gh-setup.ps1 ausfuehren." -ForegroundColor Red
-    Read-Host "Enter zum Schliessen"; exit 1
+function Pause-OnExit {
+    Read-Host "Enter zum Schliessen" | Out-Null
 }
 
-$cfg  = Get-Content $CFG_FILE -Raw | ConvertFrom-Json
-$USER = $cfg.user
-$BASE = $cfg.base_path
+try {
+    $cfg   = Get-GhToolsConfig
+    $user  = $cfg.User
+    $base  = $cfg.BasePath
+    $token = Get-GhToolsToken -TokenFile $cfg.TokenFile
 
-$sec   = Get-Content $TOKEN_FILE | ConvertTo-SecureString
-$bstr  = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
-$TOKEN = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
-[System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) | Out-Null
+    Write-Host ""
+    Write-Host "=== Sync Manager Git v2 : SYNC ===" -ForegroundColor Cyan
 
-Write-Host ""
-Write-Host "=== GitHub SYNC (Pull + Push) ===" -ForegroundColor Cyan
-
-if ($Path) {
-    $Path = $Path.TrimEnd('\','/')
-    if (-not (Test-Path $Path)) {
-        Write-Host "FEHLER: Ordner '$Path' existiert nicht." -ForegroundColor Red
-        Read-Host "Enter zum Schliessen"; exit 1
+    if ($Path) {
+        $Path = $Path.TrimEnd('\','/')
+        if (-not (Test-Path $Path)) { throw "Ordner '$Path' existiert nicht." }
+        $localPath = (Resolve-Path $Path).Path
     }
-    $localPath = (Resolve-Path $Path).Path
-    $repo      = Split-Path $localPath -Leaf
-    Write-Host "Ordner:     $localPath"
-    Write-Host "Repo-Name:  $repo (aus Ordnername)"
-} else {
-    $repo = Read-Host "Repo-Name"
-    if ([string]::IsNullOrWhiteSpace($repo)) { Read-Host "Enter zum Schliessen"; exit 1 }
-    $localPath = Join-Path $BASE $repo
+    else {
+        Write-Host "Basis: $base" -ForegroundColor DarkGray
+        $repoName = Read-Host "Repo-/Ordnername"
+        if ([string]::IsNullOrWhiteSpace($repoName)) { throw "Kein Repo angegeben." }
+        $localPath = Join-Path $base $repoName
+    }
+
+    if (-not (Test-Path (Join-Path $localPath ".git"))) {
+        throw "'$localPath' ist kein Git-Repo. Erst Push/Import verwenden."
+    }
+
+    Push-Location $localPath
+    try {
+        [void](Ensure-BaselineGitIgnore -RepositoryPath $localPath)
+
+        $originUrl = (& git remote get-url origin 2>$null | Select-Object -First 1)
+        $slug = Get-OriginSlug -RemoteUrl $originUrl
+
+        if ($null -eq $slug) {
+            $repoName = Split-Path $localPath -Leaf
+            $owner = $user
+        }
+        else {
+            $repoName = $slug.Repo
+            $owner    = $slug.Owner
+        }
+
+        $remotePub = "https://github.com/$owner/$repoName.git"
+        & git remote set-url origin $remotePub
+
+        $branch = (& git branch --show-current 2>$null).Trim()
+        if ([string]::IsNullOrWhiteSpace($branch)) { $branch = "main" }
+
+        Write-Host "Ordner : $localPath"
+        Write-Host "Remote : $owner/$repoName"
+        Write-Host "Branch : $branch"
+
+        & git add -A
+        if ($LASTEXITCODE -ne 0) { throw "git add fehlgeschlagen." }
+
+        $changes = @(& git status --short)
+        if ($changes.Count -gt 0) {
+            Write-Host ""
+            Write-Host "Lokale Aenderungen:" -ForegroundColor Cyan
+            $changes | ForEach-Object { Write-Host "  $_" }
+
+            $msg = "Auto commit " + (Get-Date -Format "yyyy-MM-dd HH:mm")
+            & git commit -m $msg
+            if ($LASTEXITCODE -ne 0) { throw "git commit fehlgeschlagen." }
+        }
+        else {
+            Write-Host "Keine lokalen Aenderungen zum Committen." -ForegroundColor Yellow
+        }
+
+        Write-Host ""
+        Write-Host "PULL --rebase..." -ForegroundColor Cyan
+        $pullCode = Invoke-GitAuthenticated `
+            -Arguments @("pull","--rebase","origin",$branch) `
+            -User $user `
+            -Token $token `
+            -WorkingDirectory $localPath
+
+        if ($pullCode -ne 0) {
+            throw "Pull/Rebase fehlgeschlagen. Bei Konflikten: git status pruefen."
+        }
+
+        Write-Host ""
+        Write-Host "PUSH..." -ForegroundColor Cyan
+        $pushCode = Invoke-GitAuthenticated `
+            -Arguments @("push","origin",$branch) `
+            -User $user `
+            -Token $token `
+            -WorkingDirectory $localPath
+
+        if ($pushCode -ne 0) { throw "Push fehlgeschlagen (ExitCode $pushCode)." }
+
+        Write-Host ""
+        Write-Host "SYNC OK: $owner/$repoName" -ForegroundColor Green
+    }
+    finally {
+        Pop-Location
+    }
+
+    if ($Path) { Start-Sleep -Seconds 2 }
+    else { Pause-OnExit }
 }
-
-if (-not (Test-Path (Join-Path $localPath ".git"))) {
-    Write-Host "FEHLER: '$localPath' ist kein Git-Repo. Erst gh-import.ps1 oder gh-push.ps1 verwenden." -ForegroundColor Red
-    Read-Host "Enter zum Schliessen"; exit 1
-}
-
-Set-Location $localPath
-
-$remoteHttps = "https://$USER`:$TOKEN@github.com/$USER/$repo.git"
-$remotePub   = "https://github.com/$USER/$repo.git"
-git remote set-url origin $remoteHttps | Out-Null
-
-$branch = git rev-parse --abbrev-ref HEAD 2>$null
-if ([string]::IsNullOrWhiteSpace($branch) -or $branch -eq "HEAD") { $branch = "main" }
-
-git add -A
-$dirty = git status --porcelain
-if ($dirty) {
-    $ts  = Get-Date -Format "yyyy-MM-dd HH:mm"
-    git commit -m "Auto commit $ts" | Out-Null
-    Write-Host "Lokale Aenderungen committed." -ForegroundColor Green
-}
-
-Write-Host "Pull (rebase) ..." -ForegroundColor Cyan
-git pull --rebase origin $branch
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Pull-Konflikt. Bitte manuell aufloesen." -ForegroundColor Red
-    git remote set-url origin $remotePub | Out-Null
-    Read-Host "Enter zum Schliessen"; exit 1
-}
-
-Write-Host "Push ..." -ForegroundColor Cyan
-git push origin $branch
-$pushCode = $LASTEXITCODE
-git remote set-url origin $remotePub | Out-Null
-
-if ($pushCode -ne 0) {
-    Write-Host "Push fehlgeschlagen." -ForegroundColor Red
-    Read-Host "Enter zum Schliessen"; exit 1
-}
-
-Write-Host ""
-Write-Host "Sync abgeschlossen fuer $USER/$repo." -ForegroundColor Green
-
-if ($Path) {
-    Start-Sleep -Seconds 3
-} else {
-    Read-Host "Enter zum Schliessen"
+catch {
+    Write-Host ""
+    Write-Host "FEHLER: $($_.Exception.Message)" -ForegroundColor Red
+    Pause-OnExit
+    exit 1
 }

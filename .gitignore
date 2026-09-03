@@ -1,0 +1,32 @@
+﻿# Visual Studio / IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# Node / web
+node_modules/
+dist/
+build/
+coverage/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+Thumbs.db
+.DS_Store
+
+# Local rebuild backups
+_backup_v1_*/
