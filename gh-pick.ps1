@@ -1,5 +1,5 @@
 ﻿# =====================================================================
-#  Sync Manager Git v2.3 - GUI REPO MANAGER
+#  Sync Manager Git v2.4 - GUI REPO MANAGER
 #  - GitHub-Repos anzeigen / filtern
 #  - Clone in separatem sichtbaren Prozess
 #  - Sync in separatem sichtbaren Prozess
@@ -87,7 +87,7 @@ function Start-ToolProcess {
 }
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Sync Manager Git v2.3  -  $USER"
+$form.Text = "Sync Manager Git v2.4  -  $USER"
 $form.Size = New-Object System.Drawing.Size(1020, 680)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::FromArgb(15,18,15)
@@ -95,7 +95,7 @@ $form.ForeColor = [System.Drawing.Color]::FromArgb(235,235,235)
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 10)
 
 $title = New-Object System.Windows.Forms.Label
-$title.Text = "SYNC MANAGER GIT v2.3"
+$title.Text = "SYNC MANAGER GIT v2.4"
 $title.Location = New-Object System.Drawing.Point(18,12)
 $title.Size = New-Object System.Drawing.Size(500,28)
 $title.Font = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
@@ -180,7 +180,7 @@ function New-Button($Text, $X, $Width, $Primary = $false) {
 }
 
 $btnClone = New-Button "Clone -> C:\Projekte"       20  175 $true
-$btnSync  = New-Button "Sync ausgewaehltes Repo"    205 185
+$btnSync  = New-Button "Clone / Sync Repo"          205 185
 $btnPush  = New-Button "Lokalen Ordner -> GitHub"   400 190 $true
 $btnOpen  = New-Button "GitHub oeffnen"             600 135
 $btnReload= New-Button "Neu laden"                  745 105
@@ -316,16 +316,47 @@ $btnSync.Add_Click({
     if (-not $r) { return }
 
     $target = Join-Path $BASE $r.name
-    if (-not (Test-Path (Join-Path $target ".git"))) {
+    $gitDir = Join-Path $target ".git"
+
+    # Repo fehlt lokal komplett -> Clone anbieten
+    if (-not (Test-Path $target)) {
+        $answer = [System.Windows.Forms.MessageBox]::Show(
+            "Das Repo ist noch nicht lokal vorhanden:`n`n$target`n`nJetzt nach C:\Projekte klonen?",
+            "Sync Manager Git v2.4 - Auto Clone",
+            "YesNo",
+            "Question"
+        )
+
+        if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) {
+            $status.Text = "Clone abgebrochen: $($r.name)"
+            return
+        }
+
+        try {
+            Start-ToolProcess `
+                -ScriptName "gh-import.ps1" `
+                -Arguments @("-Repo",[string]$r.name,"-Owner",[string]$r.owner.login)
+
+            $status.Text = "Clone gestartet: $($r.owner.login)/$($r.name) -> $target"
+        }
+        catch {
+            $status.Text = $_.Exception.Message
+        }
+        return
+    }
+
+    # Ordner existiert, ist aber kein Git-Repo
+    if (-not (Test-Path $gitDir)) {
         [System.Windows.Forms.MessageBox]::Show(
-            "$target ist lokal kein Git-Repo.`nBitte zuerst Clone verwenden.",
-            "Sync Manager Git v2",
+            "Der Ordner existiert bereits, ist aber kein Git-Repo:`n`n$target`n`nBitte Ordner pruefen oder 'Lokalen Ordner -> GitHub' verwenden.",
+            "Sync Manager Git v2.4",
             "OK",
             "Warning"
         ) | Out-Null
         return
     }
 
+    # Repo ist lokal vorhanden -> normal synchronisieren
     try {
         Start-ToolProcess `
             -ScriptName "gh-sync.ps1" `
