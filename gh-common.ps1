@@ -1,5 +1,5 @@
 ﻿# =====================================================================
-#  Sync Manager Git v2.1 - gemeinsame Funktionen
+#  Sync Manager Git v2.2 - gemeinsame Funktionen
 #  Sicherheit: PAT wird niemals in .git/config geschrieben.
 # =====================================================================
 
@@ -95,7 +95,7 @@ function Invoke-GitAuthenticated {
             $pushed = $true
         }
 
-        & git @Arguments
+        & git @Arguments | ForEach-Object { Write-Host $_ }
         $code = $LASTEXITCODE
         return $code
     }

@@ -30,3 +30,5 @@ Thumbs.db
 
 # Local rebuild backups
 _backup_v1_*/
+# Lokale Hotfix-Backups
+*.backup_*
