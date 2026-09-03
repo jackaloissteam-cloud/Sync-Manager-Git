@@ -1,5 +1,5 @@
 ﻿# =====================================================================
-#  Sync Manager Git v2 - GUI REPO MANAGER
+#  Sync Manager Git v2.3 - GUI REPO MANAGER
 #  - GitHub-Repos anzeigen / filtern
 #  - Clone in separatem sichtbaren Prozess
 #  - Sync in separatem sichtbaren Prozess
@@ -66,6 +66,7 @@ function Start-ToolProcess {
 
     $parts = @(
         "-NoProfile",
+        "-NoExit",
         "-ExecutionPolicy", "Bypass",
         "-File", (Quote-Arg $scriptPath)
     )
@@ -86,7 +87,7 @@ function Start-ToolProcess {
 }
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Sync Manager Git v2  -  $USER"
+$form.Text = "Sync Manager Git v2.3  -  $USER"
 $form.Size = New-Object System.Drawing.Size(1020, 680)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::FromArgb(15,18,15)
@@ -94,7 +95,7 @@ $form.ForeColor = [System.Drawing.Color]::FromArgb(235,235,235)
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 10)
 
 $title = New-Object System.Windows.Forms.Label
-$title.Text = "SYNC MANAGER GIT v2"
+$title.Text = "SYNC MANAGER GIT v2.3"
 $title.Location = New-Object System.Drawing.Point(18,12)
 $title.Size = New-Object System.Drawing.Size(500,28)
 $title.Font = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
